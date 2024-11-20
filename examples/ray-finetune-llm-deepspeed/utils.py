@@ -2,30 +2,15 @@ from typing import List, Optional
 import os
 import subprocess
 import logging
+from datetime import datetime
 
-from awscliv2.installers import install_multiplatform
+from awscliv2.installers import install_linux
 
-# Install AWS CLI locally, otherwise the Python wrapper falls back to using Docker
-install_multiplatform()
+LINUX_X86_64_URL = "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+
+install_linux(LINUX_X86_64_URL)
 
 logger = logging.getLogger(__name__)
-
-
-def get_hash_from_bucket(
-    bucket_uri: str, s3_sync_args: Optional[List[str]] = None
-) -> str:
-
-    s3_sync_args = s3_sync_args or []
-    subprocess.run(
-        ["awsv2", "s3", "cp", "--quiet"]
-        + s3_sync_args
-        + [os.path.join(bucket_uri, "refs", "main"), "."]
-    )
-
-    with open(os.path.join(".", "main"), "r") as f:
-        f_hash = f.read().strip()
-
-    return f_hash
 
 
 def get_checkpoint_and_refs_dir(
@@ -37,12 +22,12 @@ def get_checkpoint_and_refs_dir(
 
     from transformers.utils.hub import TRANSFORMERS_CACHE
 
-    f_hash = get_hash_from_bucket(bucket_uri, s3_sync_args)
+    f_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
     path = os.path.join(TRANSFORMERS_CACHE, f"models--{model_id.replace('/', '--')}")
 
     refs_dir = os.path.join(path, "refs")
-    checkpoint_dir = os.path.join(path, "snapshots", f_hash)
+    checkpoint_dir = os.path.join(path, "snapshots", f_timestamp)
 
     if mkdir:
         os.makedirs(refs_dir, exist_ok=True)
@@ -67,9 +52,6 @@ def download_model(
     """
     Download a model from an S3 bucket and save it in TRANSFORMERS_CACHE for
     seamless interoperability with Hugging Face's Transformers library.
-
-    The downloaded model may have a 'hash' file containing the commit hash corresponding
-    to the commit on Hugging Face Hub.
     """
     s3_sync_args = s3_sync_args or []
     path = get_download_path(model_id)

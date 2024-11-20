@@ -136,16 +136,8 @@ def collate_fn(batch, tokenizer, block_size, device):
     return out_batch
 
 
-def get_pretrained_path(model_id: str):
-    mirror_uri = get_mirror_link(model_id)
-    ckpt_path, _ = get_checkpoint_and_refs_dir(
-        model_id=model_id, bucket_uri=mirror_uri, s3_sync_args=["--no-sign-request"]
-    )
-    return ckpt_path
-
-
 def get_tokenizer(model_name, **kwargs):
-    pretrained_path = get_pretrained_path(model_name)
+    pretrained_path = get_download_path(model_name)
     # Context for legacy=True: https://github.com/huggingface/transformers/issues/25176
     tokenizer = AutoTokenizer.from_pretrained(pretrained_path, legacy=True)
     tokenizer.pad_token = tokenizer.eos_token
@@ -224,10 +216,10 @@ def checkpoint_model(
     )
     print(status_msg)
 
-
 def training_function(kwargs: dict):
     print("training_function called")
 
+    print("CUDA_VISIBLE_DEVICES=", os.environ["CUDA_VISIBLE_DEVICES"])
     # Train has a bug somewhere that causes ACCELERATE_TORCH_DEVICE to not be set
     # properly on multi-gpu nodes
     cuda_visible_device = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
@@ -250,7 +242,7 @@ def training_function(kwargs: dict):
     lock_file = str(base_path / f'{model_id.replace("/",  "--")}.lock')
     with FileLock(lock_file):
         download_model(
-            model_id=model_id, bucket_uri=bucket_uri, s3_sync_args=["--no-sign-request"]
+            model_id=model_id, bucket_uri=bucket_uri, s3_sync_args=[]
         )
 
     # Sample hyperparameters for learning rate, batch size, seed and a few other HPs
@@ -271,6 +263,8 @@ def training_function(kwargs: dict):
         mixed_precision=args.mx,
     )
 
+    print("accelerator.device=", accelerator.device)
+
     set_seed(seed)
 
     # train_ds is the local shard for this model
@@ -290,7 +284,7 @@ def training_function(kwargs: dict):
         device=accelerator.device,
     )
 
-    pretrained_path = get_pretrained_path(model_id)
+    pretrained_path = get_download_path(model_id)
     print(f"Loading model from {pretrained_path} ...")
     s = time.time()
     model = AutoModelForCausalLM.from_pretrained(
